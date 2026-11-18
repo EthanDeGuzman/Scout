@@ -11,16 +11,8 @@ import {
   ValidateIf,
   validateSync,
 } from 'class-validator';
-
-enum AuthMode {
-  DEMO = 'demo',
-  MICROSOFT = 'microsoft',
-}
-
-enum NodeEnv {
-  DEVELOPMENT = 'development',
-  PRODUCTION = 'production',
-}
+import { AuthMode } from './auth-mode.enum';
+import { NodeEnv } from './node-env.enum';
 
 export class EnvironmentVariables {
   @IsEnum(NodeEnv)
@@ -62,12 +54,12 @@ export class EnvironmentVariables {
   @Max(1)
   CLASSIFICATION_REVIEW_THRESHOLD!: number;
 
-  @ValidateIf((o) => o.AUTH_MODE === AuthMode.MICROSOFT)
+  @ValidateIf((o: EnvironmentVariables) => o.AUTH_MODE === AuthMode.MICROSOFT)
   @IsString()
   @IsNotEmpty()
   MS_CLIENT_ID!: string;
 
-  @ValidateIf((o) => o.AUTH_MODE === AuthMode.MICROSOFT)
+  @ValidateIf((o: EnvironmentVariables) => o.AUTH_MODE === AuthMode.MICROSOFT)
   @IsString()
   @IsNotEmpty()
   MS_CLIENT_SECRET!: string;
@@ -82,9 +74,11 @@ export class EnvironmentVariables {
   FRONTEND_URL!: string;
 
   @IsInt()
+  @Min(1)
   SYNC_LOOKBACK_DAYS!: number;
 
   @IsInt()
+  @Min(0)
   SYNC_INTERVAL_MINUTES!: number;
 }
 
@@ -97,7 +91,10 @@ export function validate(config: Record<string, unknown>) {
   });
 
   if (errors.length > 0) {
-    throw new Error(errors.toString());
+    const messages = errors.map(
+      (e) => `${e.property}: ${Object.values(e.constraints ?? {}).join(', ')}`,
+    );
+    throw new Error(`Invalid environment variables:\n${messages.join('\n')}`);
   }
 
   return validatedConfig;

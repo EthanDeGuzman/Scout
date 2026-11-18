@@ -1,0 +1,5 @@
+function App() {
+  return <h1>Scout</h1>
+}
+
+export default App

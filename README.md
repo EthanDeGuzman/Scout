@@ -4,7 +4,7 @@ A personal AI email assistant for job hunting. Scout connects to an Outlook inbo
 
 Everything runs on your own machine: no paid services, and your email never goes to a third-party AI API.
 
-> **Status:** early development. The project scaffold, database setup and architecture are in place; features are being built milestone by milestone (see [Roadmap](#roadmap)).
+> **Status:** early development. The backend foundation is in place (config, database, migrations, error handling, health check, CI); features are being built milestone by milestone (see [Roadmap](#roadmap)).
 
 ## Features
 
@@ -30,7 +30,7 @@ Everything runs on your own machine: no paid services, and your email never goes
 ## Architecture
 
 ```text
-React (Vite :5173) --/api--> NestJS API (:3000) --> PostgreSQL (:5432)
+React (Vite :5173) --/api--> NestJS API (:3001) --> PostgreSQL (:5432)
                                   |
                                   +--> Ollama (:11434)         local LLM
                                   +--> Microsoft Graph         Outlook
@@ -66,12 +66,31 @@ cp .env.example .env
 # set the password in DATABASE_URL (same as POSTGRES_PASSWORD above)
 # set SESSION_SECRET and TOKEN_ENCRYPTION_KEY:  openssl rand -base64 32
 
-# 3. Install and start the API
+# 3. Install, apply migrations and start the API
 npm install
+npm run migration:run
 npm run start:dev
 ```
 
-The API runs on http://localhost:3000. Swagger UI (`/api/docs`) and the health check (`/api/v1/health`) arrive in Milestone 1.
+The API runs on http://localhost:3001 (change `PORT` in `backend/.env` if it is taken). Check it with:
+
+```bash
+curl http://localhost:3001/api/v1/health
+# {"status":"ok","database":"up"}
+```
+
+Swagger UI is at http://localhost:3001/api/docs.
+
+### API conventions
+
+- All routes are under `/api/v1`.
+- Errors always use one shape, whatever went wrong. Stack traces are never returned:
+
+  ```json
+  { "error": { "code": "NOT_FOUND", "message": "Email not found", "details": null } }
+  ```
+
+  Codes: `VALIDATION_ERROR`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMIT_EXCEEDED`, `INTERNAL_ERROR`, `UPSTREAM_ERROR`, `SERVICE_UNAVAILABLE`, `AI_UNAVAILABLE`.
 
 The frontend, once built out in a later milestone:
 
@@ -89,12 +108,25 @@ Run from `backend/`:
 |---|---|
 | `npm run start:dev` | Start the API in watch mode |
 | `npm test` | Unit tests (`test/unit/`) |
-| `npm run test:e2e` | End-to-end API tests |
-| `npm run lint` | Lint |
+| `npm run test:e2e` | End-to-end API tests (needs Postgres running and `.env.test`, see below) |
+| `npm run lint` | Lint and auto-fix (`lint:check` only reports) |
 | `npm run migration:create -- src/database/migrations/<Name>` | Create a migration |
-| `npm run migration:run` / `migration:revert` | Apply / undo migrations (needs `src/database/data-source.ts`, Milestone 1) |
+| `npm run migration:run` / `migration:revert` | Apply / undo migrations |
 | `npm run db:seed` | Load the demo user and fake emails (needs `src/database/seed.ts`, Milestone 2) |
 | `npm run eval` | Score the AI against the labelled dataset (needs `eval/run-eval.ts`, Milestone 3) |
+
+### Running the tests
+
+Unit tests need nothing else. End-to-end tests use the `scout_test` database, which Docker creates for you:
+
+```bash
+cd backend
+cp .env.example .env.test
+# in .env.test: set NODE_ENV=test and point DATABASE_URL at the scout_test database
+npm run test:e2e
+```
+
+The app reads `.env.test` instead of `.env` whenever `NODE_ENV=test`, which Jest sets itself, so tests never touch your development data.
 
 ### Environment variables
 
@@ -124,7 +156,7 @@ Scout can connect to a real mailbox, so:
 
 ## Roadmap
 
-- [ ] Backend foundation: config, database, migrations, health check, CI
+- [x] Backend foundation: config, database, migrations, error handling, health check, CI
 - [ ] Emails in the database (demo mode)
 - [ ] AI classification and evaluation
 - [ ] Job tracker and dashboard

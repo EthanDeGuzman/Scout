@@ -3,11 +3,12 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { EnvironmentVariables } from './config/env.validation';
+import { configureApp } from './app.setup';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  app.setGlobalPrefix('api/v1');
+  configureApp(app);
   app.enableShutdownHooks();
 
   const swaggerConfig = new DocumentBuilder()
@@ -27,4 +28,5 @@ async function bootstrap() {
 
   await app.listen(port);
 }
+
 void bootstrap();

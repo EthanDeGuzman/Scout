@@ -13,7 +13,7 @@ A modular monolith: one NestJS app, one PostgreSQL database, organised into feat
                      |
                      |  /api/* proxied
                      v
-        NestJS API (:3000)  -------------->  Ollama (:11434)
+        NestJS API (:3001)  -------------->  Ollama (:11434)
         Swagger UI at /api/docs               local LLM
           |        |
           |        +------------------------>  Microsoft Graph

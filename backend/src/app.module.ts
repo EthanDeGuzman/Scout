@@ -4,14 +4,17 @@ import { validate } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
 import { APP_FILTER, APP_PIPE } from '@nestjs/core';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: process.env.NODE_ENV === 'test' ? '.env.test' : '.env',
       validate,
     }),
     DatabaseModule,
+    HealthModule,
   ],
 
   providers: [

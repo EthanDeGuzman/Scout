@@ -8,12 +8,14 @@ import {
 import { ErrorResponseDto } from '../../common/dto/error-response.dto';
 import { HealthResponseDto } from './dto/health-response.dto';
 import { HealthService } from './health.service';
+import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('health')
 @Controller('health')
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'Check API and database status' })
   @ApiOkResponse({ type: HealthResponseDto })

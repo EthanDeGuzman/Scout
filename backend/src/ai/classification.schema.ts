@@ -20,7 +20,7 @@ export const CLASSIFICATION_JSON_SCHEMA = {
     category: { type: 'string', enum: Object.values(EmailCategory) },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
     requiresAction: { type: 'boolean' },
-    reason: { type: 'string' },
+    reason: { type: 'string', maxLength: 500 },
     extracted: {
       type: 'object',
       properties: Object.fromEntries(

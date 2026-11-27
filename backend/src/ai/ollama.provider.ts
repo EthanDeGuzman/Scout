@@ -104,6 +104,12 @@ export class OllamaProvider implements AIProvider, OnModuleInit {
     } catch (err) {
       const reason = err instanceof Error ? err.message : 'unknown error';
       this.logger.error(`Ollama request failed: ${reason}`);
+
+      // Ollama is up but this email is too slow. Count it as a failed attempt
+      // so one slow email can't block the queue forever.
+      if ((err as { name?: unknown } | null)?.name === 'TimeoutError') {
+        throw new AiInvalidOutputException('AI request timed out');
+      }
       throw new AiUnavailableException();
     }
   }

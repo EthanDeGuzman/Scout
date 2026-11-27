@@ -63,12 +63,22 @@ describe('classification schema vs ClassificationResultDto', () => {
     );
   });
 
+  it('the schema tells the model the same reason length limit as the DTO', () => {
+    expect(CLASSIFICATION_JSON_SCHEMA.properties.reason.maxLength).toBe(500);
+  });
+
   it.each([
     ['an unknown category', { ...validSample, category: 'SPAM' }],
     ['confidence above 1', { ...validSample, confidence: 1.5 }],
     ['confidence below 0', { ...validSample, confidence: -0.1 }],
     ['a string for requiresAction', { ...validSample, requiresAction: 'yes' }],
     ['an extra field', { ...validSample, apiKey: 'x' }],
+    ['a missing extracted object', { ...validSample, extracted: undefined }],
+    ['a null extracted object', { ...validSample, extracted: null }],
+    [
+      'a reason over 500 characters',
+      { ...validSample, reason: 'x'.repeat(501) },
+    ],
     [
       'a number as an extracted value',
       {

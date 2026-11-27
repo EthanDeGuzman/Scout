@@ -6,6 +6,7 @@ import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { HealthModule } from './modules/health/health.module';
 import { AuthGuard } from './common/guards/auth.guard';
+import { EmailsModule } from './modules/emails/emails.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { AuthGuard } from './common/guards/auth.guard';
     }),
     DatabaseModule,
     HealthModule,
+    EmailsModule,
   ],
 
   providers: [

@@ -213,6 +213,17 @@ describe('OllamaProvider', () => {
       expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
 
+    it('treats a reply with no extracted object as invalid, not as a crash', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(goodReply({ extracted: undefined }))
+        .mockResolvedValueOnce(goodReply({ extracted: undefined }));
+
+      await expect(provider.classifyEmail(email)).rejects.toThrow(
+        AiInvalidOutputException,
+      );
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
     it('treats a reply with no message content as invalid', async () => {
       fetchSpy
         .mockResolvedValueOnce(new Response('{}', { status: 200 }))
@@ -230,6 +241,17 @@ describe('OllamaProvider', () => {
 
       await expect(provider.classifyEmail(email)).rejects.toThrow(
         AiUnavailableException,
+      );
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws AiInvalidOutputException on a timeout, with no retry', async () => {
+      fetchSpy.mockRejectedValueOnce(
+        new DOMException('The operation timed out', 'TimeoutError'),
+      );
+
+      await expect(provider.classifyEmail(email)).rejects.toThrow(
+        AiInvalidOutputException,
       );
       expect(fetchSpy).toHaveBeenCalledTimes(1);
     });

@@ -7,6 +7,7 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { HealthModule } from './modules/health/health.module';
 import { AuthGuard } from './common/guards/auth.guard';
 import { EmailsModule } from './modules/emails/emails.module';
+import { ClassificationModule } from './modules/classification/classification.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { EmailsModule } from './modules/emails/emails.module';
     DatabaseModule,
     HealthModule,
     EmailsModule,
+    ClassificationModule,
   ],
 
   providers: [

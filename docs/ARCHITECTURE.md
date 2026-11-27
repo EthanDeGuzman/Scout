@@ -2,7 +2,7 @@
 
 Scout is a personal email assistant. It syncs an Outlook inbox, classifies emails with a local LLM, tracks job applications, and drafts replies. This document describes how it is built and why.
 
-> Status: design document. Sections describe the intended structure; update them as milestones land.
+> Status: the foundation, emails and classification are built. Sections on sync, auth, drafts, jobs and the frontend describe the planned design.
 
 ## 1. Overview
 
@@ -49,7 +49,7 @@ Each feature lives in `backend/src/modules/<feature>/`:
 | `*.repository.ts` | SQL only. Every method takes `userId` and filters by it |
 | `dto/` | Validated request DTOs and documented response DTOs |
 
-Planned modules: `health`, `auth`, `emails`, `classification`, `drafts`, `jobs`, `profile`, `dashboard`, `sync`.
+Built: `health`, `emails`, `classification`. Planned: `auth`, `drafts`, `jobs`, `profile`, `dashboard`, `sync`.
 
 External systems (Microsoft Graph, Ollama) sit behind their own modules and interfaces so services can be tested with fakes.
 
@@ -59,10 +59,10 @@ Example: `PUT /api/v1/emails/:id/category`
 
 1. **Middleware:** `express-session` loads the session from PostgreSQL.
 2. **Guard:** the global `AuthGuard` puts the user ID on the request. `@Public()` routes skip it.
-3. **Pipe:** `ValidationPipe` builds and validates the DTO; `ParseUUIDPipe` checks `:id`.
+3. **Pipe:** `ValidationPipe` builds and validates the DTOs for the `:id` param (a UUID) and the body (a category from the enum).
 4. **Controller:** calls the service.
-5. **Service:** checks the email belongs to the user, then calls the repository.
-6. **Repository:** runs parameterised SQL and maps the row.
+5. **Service:** calls the repository. It throws 404 if the email is missing or belongs to another user, and 409 if the AI is classifying it.
+6. **Repository:** runs parameterised SQL. The insert runs when the email belongs to the user and is not `PROCESSING`.
 7. **Controller:** returns a response DTO.
 8. **Exception filter:** any thrown error becomes the standard JSON error shape.
 
@@ -118,15 +118,14 @@ export const AI_PROVIDER = Symbol('AI_PROVIDER');
 
 export interface AIProvider {
   classifyEmail(input: EmailForAI): Promise<ClassificationResult>;
-  generateReply(input: ReplyInput): Promise<GeneratedReply>;
 }
 ```
 
-`AiModule` binds `AI_PROVIDER` to `OllamaProvider`. Tests override it with `FakeAIProvider`, so nothing needs Ollama running.
+`generateReply` joins the interface when reply drafting is built. `AiModule` binds `AI_PROVIDER` to `OllamaProvider`. Tests override it with `FakeAIProvider`, so nothing needs Ollama running.
 
 ### Calling Ollama
 
-`POST {OLLAMA_BASE_URL}/api/chat` with `stream: false`, a JSON Schema in `format` so replies have a fixed shape, `temperature: 0` and a fixed `seed` for repeatability, and `AbortSignal.timeout(OLLAMA_TIMEOUT_MS)`. If Ollama is unreachable the API returns `503 AI_UNAVAILABLE`.
+`POST {OLLAMA_BASE_URL}/api/chat` with `stream: false`, `think: false` (thinking mode is slower and adds nothing here), a JSON Schema in `format` so replies have a fixed shape, `temperature: 0` and a fixed `seed` for repeatability, and `AbortSignal.timeout(OLLAMA_TIMEOUT_MS)`. The email body is cut to 8,000 characters. If Ollama is unreachable the API returns `503 AI_UNAVAILABLE`. A timeout is different: Ollama is up but too slow for that email, so it counts as a failed attempt (see section 8).
 
 ### Prompts
 
@@ -135,7 +134,7 @@ Prompts are versioned files in `backend/src/ai/prompts/` (`classify_v1.md`, `rep
 ### Validation of model output
 
 1. `JSON.parse` the reply.
-2. Validate against `ClassificationResultDto`. Retry once on failure, then fail.
+2. Validate against `ClassificationResultDto`, which requires every field including `extracted`. Retry once on failure, then fail with `AiInvalidOutputException`.
 3. Null any extracted value that does not appear in the email text.
 4. Set `needs_review` when confidence is below `CLASSIFICATION_REVIEW_THRESHOLD`.
 
@@ -143,7 +142,7 @@ Prompts are versioned files in `backend/src/ai/prompts/` (`classify_v1.md`, `rep
 
 Email content is untrusted.
 
-- Instructions go only in the system message. Email content goes only in the user message inside `<email>` tags, and the system prompt says to treat it as data.
+- Instructions go only in the system message. Email content goes only in the user message inside `<email>` tags, and the system prompt says to treat it as data. Any `</email` inside the email text is escaped, so an email cannot close the tag early.
 - The model has no tools and cannot call the API, read tokens or send anything.
 - Output must pass validation. Free text is never executed or used to build SQL.
 - Outlook drafts are created only on a user click. Nothing is ever sent.
@@ -159,9 +158,12 @@ Everything runs inside the Nest process.
 
 - **Sync** runs on demand (`POST /sync`) or on an interval when `SYNC_INTERVAL_MINUTES > 0`. Only one sync runs at a time, guarded by an in-memory flag and `sync_state.last_status = 'RUNNING'`.
 - New emails are inserted as `PENDING`. When sync finishes it emits `emails.synced`.
-- **Classification** listens for that event (`@OnEvent`) and also runs via `POST /emails/classify-pending`. It processes one email at a time, because Ollama handles one request at a time on a laptop.
-- Emails are claimed atomically: `UPDATE emails SET processing_status = 'PROCESSING' WHERE id = $1 AND processing_status = 'PENDING' RETURNING id`. No row back means someone else took it.
-- On startup, emails stuck in `PROCESSING` are reset to `PENDING`. After 3 failed attempts an email stays `FAILED` until re-run manually.
+- **Classification** runs through `POST /emails/classify-pending` and processes one email at a time, because Ollama handles one request at a time on a laptop. A listener for `emails.synced` (`@OnEvent`) arrives with sync.
+- Emails are claimed in one SQL step: `UPDATE emails SET processing_status = 'PROCESSING' WHERE id = $1 AND user_id = $2 AND processing_status = 'PENDING' RETURNING ...`. No row back means someone else took it. `POST /emails/:id/classify` can also claim a `CLASSIFIED` or `FAILED` email to re-run it.
+- A bad reply or a timeout counts as one attempt and sends the email back to `PENDING`. After 3 attempts it stays `FAILED` until someone re-runs it. An unreachable Ollama counts nothing: the email is released and the batch stops with a 503.
+- An email that already has a classification returns to `CLASSIFIED` after a failed re-run, never `PENDING`. Otherwise the next batch would replace its earlier answer, including a manual correction.
+- `PUT /emails/:id/category` returns 409 while the email is `PROCESSING`, so an AI result cannot land after a correction and replace it.
+- On startup, emails stuck in `PROCESSING` are reset to `PENDING`.
 - `app.enableShutdownHooks()` lets Nest stop intervals and close the database connection on `Ctrl+C`.
 
 Sync and classification communicate through events, so the two modules do not call each other directly. A queue (BullMQ and Redis) and a separate worker are possible later if this becomes slow or multi-user.
@@ -197,7 +199,8 @@ scout/
 |   |-- eval/                 labelled dataset and eval runner
 |   |-- test/
 |   |   |-- unit/             unit tests, mirroring src/ (e.g. test/unit/modules/emails/emails.service.spec.ts)
-|   |   |-- *.e2e-spec.ts     end-to-end API tests
+|   |   |-- *.e2e-spec.ts     end-to-end API tests (run one at a time: they share one database)
+|   |   |-- setup-e2e.ts      Jest globalSetup: migrates the scout_test database before e2e runs
 |   |-- src/
 |       |-- config/           env validation
 |       |-- database/         data source, migrations, seed

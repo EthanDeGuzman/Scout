@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsDefined,
   IsEnum,
   IsNumber,
   IsOptional,
@@ -64,6 +65,8 @@ export class ClassificationResultDto implements Pick<
   @MaxLength(500)
   reason!: string;
 
+  // @ValidateNested alone lets a missing value through, so require it first.
+  @IsDefined()
   @ValidateNested()
   @Type(() => ExtractedDetailsDto)
   extracted!: ExtractedDetailsDto;

@@ -4,7 +4,7 @@ A personal AI email assistant for job hunting. Scout connects to an Outlook inbo
 
 Everything runs on your own machine: no paid services, and your email never goes to a third-party AI API.
 
-> **Status:** early development. The backend foundation is in place (config, database, migrations, error handling, health check, CI); features are being built milestone by milestone (see [Roadmap](#roadmap)).
+> **Status:** early development. The backend has its foundation, the emails API and AI classification. The classification evaluation, job tracker, reply drafting, Outlook sync and frontend are still to come (see [Roadmap](#roadmap)).
 
 ## Features
 
@@ -51,7 +51,7 @@ Full details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 - Node.js 22 (`.nvmrc` is included; use `nvm use` or `fnm use`)
 - Docker Desktop
-- [Ollama](https://ollama.com) with a model pulled, for example `ollama pull qwen3:8b`
+- [Ollama](https://ollama.com) with a model pulled, for example `ollama pull qwen3.5:9b`. Set `OLLAMA_MODEL` in `backend/.env` to the same name.
 
 ### Run it
 
@@ -80,6 +80,18 @@ curl http://localhost:3001/api/v1/health
 ```
 
 Swagger UI is at http://localhost:3001/api/docs.
+
+### Try the classification
+
+With `AUTH_MODE=demo` you are logged in as the seeded demo user. From `backend/`:
+
+```bash
+npm run db:seed
+curl -X POST http://localhost:3001/api/v1/emails/classify-pending
+# {"found":4,"classified":4,"failed":0}
+```
+
+The 4 unclassified seed emails go to Ollama one at a time, and the response counts the outcomes. `POST /emails/:id/classify` re-runs one email and `PUT /emails/:id/category` corrects a category. Both are in Swagger UI.
 
 ### API conventions
 
@@ -112,7 +124,7 @@ Run from `backend/`:
 | `npm run lint` | Lint and auto-fix (`lint:check` only reports) |
 | `npm run migration:create -- src/database/migrations/<Name>` | Create a migration |
 | `npm run migration:run` / `migration:revert` | Apply / undo migrations |
-| `npm run db:seed` | Load the demo user and fake emails (needs `src/database/seed.ts`, Milestone 2) |
+| `npm run db:seed` | Load the demo user and 20 fake emails; 4 are left unclassified |
 | `npm run eval` | Score the AI against the labelled dataset (needs `eval/run-eval.ts`, Milestone 3) |
 
 ### Running the tests
@@ -127,6 +139,8 @@ npm run test:e2e
 ```
 
 The app reads `.env.test` instead of `.env` whenever `NODE_ENV=test`, which Jest sets itself, so tests never touch your development data.
+
+Before each e2e run, `test/setup-e2e.ts` applies pending migrations to the test database, so you never migrate it by hand. It refuses to run against any database whose name does not end in `_test`. The e2e files run one at a time because they share that database.
 
 ### Environment variables
 
@@ -157,8 +171,8 @@ Scout can connect to a real mailbox, so:
 ## Roadmap
 
 - [x] Backend foundation: config, database, migrations, error handling, health check, CI
-- [ ] Emails in the database (demo mode)
-- [ ] AI classification and evaluation
+- [x] Emails in the database (demo mode)
+- [ ] AI classification and evaluation (classification done, evaluation to do)
 - [ ] Job tracker and dashboard
 - [ ] Career profile and reply drafting
 - [ ] Outlook connection and sync

@@ -15,6 +15,7 @@ import {
   ClaimedEmail,
   ClassificationRepository,
 } from './classification.repository';
+import { EmailCategory } from '../emails/email-category.enum';
 
 export interface ClassifyPendingSummary {
   found: number;
@@ -70,7 +71,8 @@ export class ClassificationService implements OnModuleInit {
     userId: string,
     id: string,
   ): Promise<ClaimedEmail> {
-    const email = await this.repo.claim(userId, id);
+    // An explicit request may re-run an email that is already classified.
+    const email = await this.repo.claim(userId, id, true);
     if (email) return email;
 
     const status = await this.repo.findStatus(userId, id);
@@ -80,8 +82,9 @@ export class ClassificationService implements OnModuleInit {
 
   /**
    * Ask the AI and save the outcome. Returns true if classified, false if the
-   * model's output was bad. Anything else (Ollama down, a database error)
-   * puts the email back to PENDING and is rethrown.
+   * model's output was bad or it timed out (an attempt is counted). Anything
+   * else (Ollama down, a database error) releases the email without counting
+   * an attempt and is rethrown.
    */
   private async process(email: ClaimedEmail): Promise<boolean> {
     try {
@@ -90,11 +93,29 @@ export class ClassificationService implements OnModuleInit {
       return true;
     } catch (err) {
       if (err instanceof AiInvalidOutputException) {
-        await this.repo.markFailed(email.id, 'AI output failed validation');
+        // The message is a fixed string: it never contains email content.
+        await this.repo.markFailed(email.id, err.message);
         return false;
       }
       await this.repo.release(email.id);
       throw err;
     }
+  }
+
+  /** Record a person's correction, then return the email as it now stands. */
+  async setCategory(
+    userId: string,
+    id: string,
+    category: EmailCategory,
+  ): Promise<GetEmailResponseDto> {
+    const saved = await this.repo.saveManualCategory(userId, id, category);
+    if (!saved) {
+      const status = await this.repo.findStatus(userId, id);
+      if (status === null) throw new NotFoundException('Email not found');
+      throw new ConflictException(
+        'Email is being classified right now; try again in a moment',
+      );
+    }
+    return this.emails.getById(userId, id);
   }
 }

@@ -52,6 +52,7 @@ describe('ClassificationService', () => {
       release: jest.fn(),
       resetStuck: jest.fn(),
       findStatus: jest.fn(),
+      saveManualCategory: jest.fn(),
     };
     getById = jest.fn();
     classifyEmail = jest.fn();
@@ -87,7 +88,8 @@ describe('ClassificationService', () => {
 
       await expect(service.classifyOne('u1', 'e1')).resolves.toBe(detail);
 
-      expect(repo.claim).toHaveBeenCalledWith('u1', 'e1');
+      // An explicit request may re-run an already classified email.
+      expect(repo.claim).toHaveBeenCalledWith('u1', 'e1', true);
       expect(classifyEmail).toHaveBeenCalledWith(claimed);
       expect(repo.saveResult).toHaveBeenCalledWith('e1', result);
     });
@@ -124,6 +126,21 @@ describe('ClassificationService', () => {
         'AI output failed validation',
       );
       expect(repo.saveResult).not.toHaveBeenCalled();
+    });
+
+    it('stores the exception message, such as a timeout, as the error', async () => {
+      repo.claim.mockResolvedValue(claimed);
+      classifyEmail.mockRejectedValue(
+        new AiInvalidOutputException('AI request timed out'),
+      );
+      getById.mockResolvedValue({ id: 'e1' });
+
+      await service.classifyOne('u1', 'e1');
+
+      expect(repo.markFailed).toHaveBeenCalledWith(
+        'e1',
+        'AI request timed out',
+      );
     });
 
     it('releases the email without counting an attempt when the AI is unavailable', async () => {
@@ -167,6 +184,17 @@ describe('ClassificationService', () => {
       });
     });
 
+    it('only claims emails that are still pending, never re-runs classified ones', async () => {
+      repo.findPendingIds.mockResolvedValue(['a']);
+      repo.claim.mockResolvedValue({ ...claimed, id: 'a' });
+      classifyEmail.mockResolvedValue(result);
+
+      await service.classifyPending('u1');
+
+      // Exactly two arguments: no `allowRerun` flag.
+      expect(repo.claim).toHaveBeenCalledWith('u1', 'a');
+    });
+
     it('skips emails that another request already claimed', async () => {
       repo.findPendingIds.mockResolvedValue(['a', 'b']);
       repo.claim
@@ -208,6 +236,44 @@ describe('ClassificationService', () => {
       expect(repo.saveResult).toHaveBeenCalledTimes(1);
       expect(repo.release).toHaveBeenCalledWith('b');
       expect(repo.claim).toHaveBeenCalledTimes(2); // 'c' was never touched
+    });
+  });
+
+  describe('setCategory', () => {
+    it('saves the correction and returns the updated email', async () => {
+      const detail = { id: 'e1' } as GetEmailResponseDto;
+      repo.saveManualCategory.mockResolvedValue(true);
+      getById.mockResolvedValue(detail);
+
+      await expect(
+        service.setCategory('u1', 'e1', EmailCategory.PERSONAL),
+      ).resolves.toBe(detail);
+
+      expect(repo.saveManualCategory).toHaveBeenCalledWith(
+        'u1',
+        'e1',
+        EmailCategory.PERSONAL,
+      );
+    });
+
+    it('throws NotFoundException when the email is not found', async () => {
+      repo.saveManualCategory.mockResolvedValue(false);
+      repo.findStatus.mockResolvedValue(null);
+
+      await expect(
+        service.setCategory('u1', 'nope', EmailCategory.PERSONAL),
+      ).rejects.toThrow(NotFoundException);
+      expect(getById).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictException when the email is being classified right now', async () => {
+      repo.saveManualCategory.mockResolvedValue(false);
+      repo.findStatus.mockResolvedValue('PROCESSING');
+
+      await expect(
+        service.setCategory('u1', 'e1', EmailCategory.PERSONAL),
+      ).rejects.toThrow(ConflictException);
+      expect(getById).not.toHaveBeenCalled();
     });
   });
 });
